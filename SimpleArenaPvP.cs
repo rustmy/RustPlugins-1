@@ -13,6 +13,15 @@ namespace Oxide.Plugins
         private static Game game = new Game();
 
         #region Hooks
+        bool? OnPlayerLand(BasePlayer player)
+        {
+            if (game.HasPlayer(player.name))
+            {
+                return true;
+            }
+            return null;
+        }
+
         void OnPlayerDie(BasePlayer player, HitInfo info)
         {
             timer.In(3f, () => PreHandleDeath(player));
@@ -117,6 +126,15 @@ namespace Oxide.Plugins
                     return;
                 players.Add(player.name, new GamePlayer(team, player));
                 player.Teleport(TeamPositions[team - 1]);
+                Item item = Inventory.BuildWeapon(-853695669, 0, null); // Bow
+                if (item != null)
+                    player.GiveItem(item);
+                item = Inventory.BuildItem(-420273765, 20, 0); // Arrows
+                if (item != null)
+                    player.GiveItem(item);
+                item = Inventory.BuildItem(776005741, 1, 0); // Bone knife
+                if (item != null)
+                    player.GiveItem(item);
             }
 
             public void RemovePlayer(BasePlayer player, bool teleport)
@@ -237,14 +255,14 @@ namespace Oxide.Plugins
                 }
             }
 
-            private Item BuildItem(int itemid, int amount, ulong skin)
+            public static Item BuildItem(int itemid, int amount, ulong skin)
             {
                 if (amount < 1)
                     amount = 1;
                 return ItemManager.CreateByItemID(itemid, amount, skin);
             }
 
-            private Item BuildWeapon(int id, ulong skin, List<int> mods)
+            public static Item BuildWeapon(int id, ulong skin, List<int> mods)
             {
                 Item item = ItemManager.CreateByItemID(id, 1, skin);
                 var weapon = item.GetHeldEntity() as BaseProjectile;
