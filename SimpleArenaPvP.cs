@@ -7,8 +7,8 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("HarrysPvPGame", "stoneharry", "0.1")]
-    public class HarrysTest : RustPlugin
+    [Info("SimpleArenaPvP", "stoneharry", "0.1")]
+    public class SimpleArenaPvP : RustPlugin
     {
         private static Game game = new Game();
 
