@@ -77,8 +77,8 @@ namespace Oxide.Plugins
                 return;
             if (game.HasPlayer(player.name))
             {
-                game.RemovePlayer(player, teleport);
                 player.inventory.Strip();
+                game.RemovePlayer(player, teleport);
             }
         }
         #endregion
