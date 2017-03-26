@@ -1,8 +1,4 @@
-﻿using Oxide.Core.Plugins;
-using Oxide.Plugins;
-using System;
-using System.Collections.Generic;
-using System.Reflection;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -16,15 +12,40 @@ namespace Oxide.Plugins
         bool? OnPlayerLand(BasePlayer player)
         {
             if (game.HasPlayer(player.name))
-            {
                 return true;
-            }
             return null;
         }
 
-        void OnPlayerDie(BasePlayer player, HitInfo info)
+        bool? OnPlayerDie(BasePlayer player, HitInfo info)
         {
-            timer.In(3f, () => PreHandleDeath(player));
+            if (!game.HasPlayer(player.name))
+                return null;
+            if (game.IsAfterDeathHandleOutOfLives(player))
+            {
+                timer.In(3f, () => PreHandleDeath(player));
+                return null;
+            }
+            DropBodyOfPlayer(player);
+            game.ResetPlayerToSpawn(player);
+            return true;
+        }
+
+        private void DropBodyOfPlayer(BasePlayer player)
+        {
+            BaseCorpse corpse = player.DropCorpse("assets/prefabs/player/player_corpse.prefab");
+            if (corpse != null)
+            {
+
+                LootableCorpse lootable = corpse as LootableCorpse;
+                if (lootable != null)
+                {
+                    ItemContainer[] source = new ItemContainer[] { player.inventory?.containerMain, player.inventory?.containerWear, player.inventory?.containerBelt };
+                    lootable.TakeFrom(source);
+                    lootable.playerName = player.displayName;
+                    lootable.playerSteamID = player.userID;
+                }
+                corpse.SpawnAsMapEntity();
+            }
         }
 
         private void PreHandleDeath(BasePlayer player)
@@ -55,7 +76,10 @@ namespace Oxide.Plugins
             if (player == null)
                 return;
             if (game.HasPlayer(player.name))
+            {
                 game.RemovePlayer(player, teleport);
+                player.inventory.Strip();
+            }
         }
         #endregion
 
@@ -77,8 +101,13 @@ namespace Oxide.Plugins
                 return;
             }
             int team = -1;
-            Int32.TryParse(args[0], out team);
+            int.TryParse(args[0], out team);
             if (team == 1 || team == 2) {
+                if (player.IsSleeping() || player.IsDead() || player.HasPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot))
+                {
+                    SendReply(player, "You are sleeping/dead/receiving data so cannot join the game. Try again in a few seconds.");
+                    return;
+                }
                 SendReply(player, "You have joined team " + team + ". To leave type: /pvp");
                 game.AddPlayer(player, team);
             } else {
@@ -97,6 +126,14 @@ namespace Oxide.Plugins
             SendReply(player, position.x + ", " + position.y + ", " + position.z);
         }
 
+        [ChatCommand("home")]
+        void GoHomeCommand(BasePlayer player, string command, string[] args)
+        {
+            if (!HasAccess(player))
+                return;
+            player.Teleport(new Vector3(941.3005f, 11.07579f, -257.8884f));
+        }
+
         bool HasAccess(BasePlayer player)
         {
             if (player.net.connection.authLevel < 1)
@@ -113,6 +150,7 @@ namespace Oxide.Plugins
         {
             public List<Vector3> TeamPositions { get; set; } = new List<Vector3>();
             private Dictionary<string, GamePlayer> players = new Dictionary<string, GamePlayer>();
+            public uint StartingLives { get; set; } = 3;
 
             public Game()
             {
@@ -120,12 +158,33 @@ namespace Oxide.Plugins
                 TeamPositions.Add(new Vector3(997.1364f, 21.74019f, -365.8211f)); // Team 2
             }
 
+            public bool IsAfterDeathHandleOutOfLives(BasePlayer player)
+            {
+                var gamePlayer = players[player.name];
+                var lives = gamePlayer.DeductLives();
+                if (lives == 0)
+                {
+                    player.SendConsoleCommand("chat.add", 0, "Your dead! Good luck next time.", 1f);
+                    return true;
+                }
+                player.SendConsoleCommand("chat.add", 0, "You have " + lives + " lives remaining!", 1f);
+                return false;
+            }
+
             public void AddPlayer(BasePlayer player, int team)
             {
                 if (team < 1 || team > TeamPositions.Count)
                     return;
-                players.Add(player.name, new GamePlayer(team, player));
-                player.Teleport(TeamPositions[team - 1]);
+                players.Add(player.name, new GamePlayer(team, player, StartingLives));
+                ResetPlayerToSpawn(player);
+            }
+
+            public void ResetPlayerToSpawn(BasePlayer player)
+            {
+                if (!players.ContainsKey(player.name))
+                    return;
+                player.inventory.Strip();
+                player.Teleport(TeamPositions[players[player.name].Team - 1]);
                 Item item = Inventory.BuildWeapon(-853695669, 0, null); // Bow
                 if (item != null)
                     player.GiveItem(item);
@@ -135,6 +194,9 @@ namespace Oxide.Plugins
                 item = Inventory.BuildItem(776005741, 1, 0); // Bone knife
                 if (item != null)
                     player.GiveItem(item);
+                player.health = 100f;
+                player.metabolism.calories.value = 500f;
+                player.metabolism.hydration.value = 500f;
             }
 
             public void RemovePlayer(BasePlayer player, bool teleport)
@@ -172,13 +234,21 @@ namespace Oxide.Plugins
             public Vector3 HomeLocation { get; set; }
             public Inventory Items { get; set; }
             public PlayerStatus Status { get; set; }
+            public uint Lives { get; set; } = 3;
 
-            public GamePlayer(int team, BasePlayer player)
+            public GamePlayer(int team, BasePlayer player, uint startingLives)
             {
                 Team = team;
                 HomeLocation = player.GetEstimatedWorldPosition();
                 Items = new Inventory(player);
                 Status = new PlayerStatus(player);
+                Lives = startingLives;
+            }
+
+            public uint DeductLives()
+            {
+                Lives -= 1;
+                return Lives;
             }
         }
         #endregion
@@ -232,7 +302,6 @@ namespace Oxide.Plugins
                             continue;
                         WearItems.Add(new SavedItem(item));
                     }
-                player.inventory.Strip();
             }
 
             public void RestoreInventory(BasePlayer player)
